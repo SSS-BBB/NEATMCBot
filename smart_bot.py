@@ -19,16 +19,19 @@ class SmartBot:
         self.bot_ready = False
         self.is_dead = False
         self.genome = genome
+        print("Bot instance init")
         self.start_bot()
 
     def start_bot(self):
         self.bot = mineflayer.createBot(self.bot_args)
-
+        print("start bot")
         self.start_event()
 
     # Attach mineflayer events to bot
     def start_event(self):
         
+        print("start event")
+
         @On(self.bot, "login")
         def login(this):
             bot_socket = self.bot._client.socket
@@ -84,31 +87,34 @@ class SmartBot:
             e.type == "hostile" )
 
         # [ myPos, otherPos, myHealth ]
-        if (not nearest_entity):
-            return [
+        try:
+            if (not nearest_entity):
+                return [
+                    self.bot.entity.position.x,
+                    self.bot.entity.position.y,
+                    self.bot.entity.position.z,
+
+                    0,
+                    0,
+                    0,
+
+                    self.bot.health if self.bot.health else 0
+                ]
+            
+
+            return [ 
                 self.bot.entity.position.x,
                 self.bot.entity.position.y,
                 self.bot.entity.position.z,
 
-                0,
-                0,
-                0,
+                nearest_entity.position.x,
+                nearest_entity.position.y,
+                nearest_entity.position.z,
 
                 self.bot.health if self.bot.health else 0
             ]
-        
-
-        return [ 
-            self.bot.entity.position.x,
-            self.bot.entity.position.y,
-            self.bot.entity.position.z,
-
-            nearest_entity.position.x,
-            nearest_entity.position.y,
-            nearest_entity.position.z,
-
-            self.bot.health if self.bot.health else 0
-        ]
+        except:
+            return [0, 0, 0, 0, 0, 0, 0]
 
     def brain_action(self, config):
         if self.genome:
@@ -116,7 +122,6 @@ class SmartBot:
 
             obs = self.get_observations()
             if (obs):
-                print(obs)
                 output = brain.activate(tuple(self.get_observations()))
                 action_id = output.index(max(output))
 
@@ -149,9 +154,11 @@ class SmartBot:
             e.type == "hostile" )
             
             if (nearest_entity):
-                if (nearest_entity.position):
+                try:
                     self.bot.lookAt(nearest_entity.position.offset(0, nearest_entity.height, 0))
-                    
+                except:
+                    print("I don't fucking care!")
+
                 self.bot.attack(nearest_entity)
 
     def random_action(self):

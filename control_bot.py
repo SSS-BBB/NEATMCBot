@@ -9,6 +9,7 @@ import random
 import string
 import json
 import numpy as np
+import time
 
 mineflayer = require("mineflayer")
 
@@ -110,9 +111,9 @@ class ControlBot:
                 bot_intance.random_action()
             self.bot.waitForTicks(1)
 
-    def count_ready(self):
+    def count_ready(self, bot_list):
         count = 0
-        for bot_intance in self.bot_list:
+        for bot_intance in bot_list:
             if (bot_intance.bot_ready):
                 count += 1
 
@@ -141,22 +142,51 @@ class ControlBot:
 
     def eval_genomes(self, genomes, config):
 
-        max_steps = 200
+        max_steps = 20
         population_list = []
 
+        gen_unique = self.generate_bot_unique()
         for i, (genome_id, genome) in enumerate(genomes):
-            bot_name = f"GEN{self.gen}ID{genome_id}_{self.generate_bot_unique()}"
+            bot_name = f"GEN{self.gen}ID{genome_id}_{gen_unique}"
             bot_instance = SmartBot(bot_name, self.server_host, self.server_port, genome)
+
+            @On(bot_instance.bot, "login")
+            def login(this):
+                bot_socket = bot_instance.bot._client.socket
+                print(f"{bot_instance.bot_name} Logged in to {bot_socket.server if bot_socket.server else bot_socket._host}")
+                bot_instance.init_bot()
+
+            @On(bot_instance.bot, "respawn")
+            def lose(this):
+                this.quit()
+
+            @On(bot_instance.bot, "death")
+            def on_dead(this):
+                bot_instance.is_dead = True
+                bot_instance.survive_time = time.time() - self.spawn_time
+
+            # Disconnected from server
+            @On(bot_instance.bot, "end")
+            def end(this, reason):
+                print(f"{self.bot_name} Disconnected: {reason}")
+
+                # Turn off event listeners
+                off(bot_instance.bot, "login", login)
+                off(bot_instance.bot, "end", end)
+                off(bot_instance.bot, "respawn", lose)
+                off(bot_instance.bot, "death", on_dead)
+
             population_list.append(bot_instance)
 
         # Wait for all bots to be ready before executing any actions
-        while (self.count_ready() < len(self.bot_list)):
+        while (self.count_ready(population_list) < len(population_list)):
             pass
-        
+
         # Start
         for step in range(max_steps):
             for bot_i in population_list:
                 bot_i.brain_action(config)
+            self.bot.waitForTicks(1)
 
         # Finish
         for bot_i in population_list:
