@@ -1,7 +1,14 @@
 from javascript import require, On, Once, AsyncTask, once, off
 from smart_bot import SmartBot
-import asyncio
 import threading
+import neat
+import neat.config
+import os
+import pickle
+import random
+import string
+import json
+import numpy as np
 
 mineflayer = require("mineflayer")
 
@@ -21,6 +28,12 @@ class ControlBot:
         self.bot_name = bot_name
         self.target_bot = target_bot
         self.bot_list = []
+
+        self.unique_list_path = "unique_list.npy"
+        if (os.path.exists(self.unique_list_path)):
+            self.unique_list = np.load(self.unique_list_path).tolist()
+        else:
+            self.unique_list = []
 
         self.start_bot()
 
@@ -62,6 +75,10 @@ class ControlBot:
                     thread = threading.Thread(target=self.random_all, name="RandomAll", args=[200])
                     thread.start()
 
+                elif "neat" in message:
+                    thread = threading.Thread(target=self.start_neat, name="StartNeat")
+                    thread.start()
+
         # Disconnected from server
         @On(self.bot, "end")
         def end(this, reason):
@@ -75,7 +92,8 @@ class ControlBot:
     def create_bots(self, amount):
         self.bot.chat(f"Creating {amount} bots...")
         for i in range(amount):
-            created_bot = SmartBot(f"Create-Test-{i}", self.server_host, self.server_port)
+            bot_name = self.generate_bot_unique()
+            created_bot = SmartBot(bot_name, self.server_host, self.server_port)
             self.bot_list.append(created_bot)
 
     # Random action for all bots
@@ -99,3 +117,76 @@ class ControlBot:
                 count += 1
 
         return count
+    
+    def generate_unique(self, length=5):
+
+        return ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+
+        # unique = ""
+        # characters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+        # for _ in range(length):
+        #     unique += characters
+
+    def generate_bot_unique(self, length=5):
+
+        bot_unique = self.generate_unique(length)
+
+        while (bot_unique in self.unique_list):
+                bot_unique = self.generate_unique(5)
+        self.unique_list.append(bot_unique)
+
+        np.save(self.unique_list_path, self.unique_list)
+
+        return bot_unique
+
+    def eval_genomes(self, genomes, config):
+
+        max_steps = 200
+        population_list = []
+
+        for i, (genome_id, genome) in enumerate(genomes):
+            bot_name = f"GEN{self.gen}ID{genome_id}_{self.generate_bot_unique()}"
+            bot_instance = SmartBot(bot_name, self.server_host, self.server_port, genome)
+            population_list.append(bot_instance)
+
+        # Wait for all bots to be ready before executing any actions
+        while (self.count_ready() < len(self.bot_list)):
+            pass
+        
+        # Start
+        for step in range(max_steps):
+            for bot_i in population_list:
+                bot_i.brain_action(config)
+
+        # Finish
+        for bot_i in population_list:
+            bot_i.set_fitness()
+
+        self.gen += 1
+
+    def run_neat(self, config):
+        # p = neat.Checkpointer.restore_checkpoint("neat-checkpoint-39") # load checkpoint
+        p = neat.Population(config)
+        p.add_reporter(neat.StdOutReporter(True))
+        stats = neat.StatisticsReporter()
+        p.add_reporter(stats)
+        p.add_reporter(neat.Checkpointer(2))
+
+        self.gen = 1
+        winner = p.run(self.eval_genomes, 5)
+
+        # save the best genome
+        with open("best.pickle", "wb") as f:
+            pickle.dump(winner, f)
+
+    def start_neat(self):
+        # config
+        local_dir = os.path.dirname(__file__)
+        config_path = os.path.join(local_dir, "config.txt")
+
+        config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                            neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                            config_path)
+
+        # Train with NEAT
+        self.run_neat(config)

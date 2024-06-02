@@ -1,12 +1,13 @@
 from javascript import require, On, Once, AsyncTask, once, off
 import random
 import time
+import neat
 
 mineflayer = require("mineflayer")
 
 class SmartBot:
 
-    def __init__(self, bot_name, server_host, server_port):
+    def __init__(self, bot_name, server_host, server_port, genome=None):
         self.bot_args = {
             "host": server_host,
             "port": server_port,
@@ -16,6 +17,8 @@ class SmartBot:
         self.bot_name = bot_name
         self.actionSize = 8
         self.bot_ready = False
+        self.is_dead = False
+        self.genome = genome
         self.start_bot()
 
     def start_bot(self):
@@ -43,6 +46,11 @@ class SmartBot:
         def lose(this):
             this.quit()
 
+        @On(self.bot, "death")
+        def on_dead(this):
+            self.is_dead = True
+            self.survive_time = time.time() - self.spawn_time
+
         # Disconnected from server
         @On(self.bot, "end")
         def end(this, reason):
@@ -53,6 +61,7 @@ class SmartBot:
             off(self.bot, "end", end)
             off(self.bot, "messagestr", messagestr)
             off(self.bot, "respawn", lose)
+            off(self.bot, "death", on_dead)
 
     def init_bot(self):
         randX = random.randrange(-209, -203)
@@ -85,7 +94,7 @@ class SmartBot:
                 0,
                 0,
 
-                self.bot.health
+                self.bot.health if self.bot.health else 0
             ]
         
 
@@ -98,8 +107,21 @@ class SmartBot:
             nearest_entity.position.y,
             nearest_entity.position.z,
 
-            self.bot.health
+            self.bot.health if self.bot.health else 0
         ]
+
+    def brain_action(self, config):
+        if self.genome:
+            brain = neat.nn.FeedForwardNetwork.create(self.genome, config)
+
+            obs = self.get_observations()
+            if (obs):
+                print(obs)
+                output = brain.activate(tuple(self.get_observations()))
+                action_id = output.index(max(output))
+
+                # take action
+                self.bot_action(action_id)
 
     # Bot takes some action
     def bot_action(self, action_id):
@@ -127,9 +149,18 @@ class SmartBot:
             e.type == "hostile" )
             
             if (nearest_entity):
-                self.bot.lookAt(nearest_entity.position.offset(0, nearest_entity.height, 0))
+                if (nearest_entity.position):
+                    self.bot.lookAt(nearest_entity.position.offset(0, nearest_entity.height, 0))
+                    
                 self.bot.attack(nearest_entity)
 
     def random_action(self):
         rand_action = random.randrange(0, self.actionSize)
         self.bot_action(rand_action)
+
+    def set_fitness(self):
+        if (not self.is_dead):
+            self.survive_time = time.time() - self.spawn_time
+
+        self.genome.fitness = self.survive_time
+        self.bot.quit()
