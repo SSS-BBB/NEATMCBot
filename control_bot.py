@@ -1,6 +1,7 @@
 from javascript import require, On, Once, AsyncTask, once, off
 from smart_bot import SmartBot
 import asyncio
+import threading
 
 mineflayer = require("mineflayer")
 
@@ -57,7 +58,9 @@ class ControlBot:
 
                 elif "fight" in message:
                     self.create_bots(5)
-                    self.random_all()
+                    
+                    thread = threading.Thread(target=self.random_all, name="RandomAll", args=[200])
+                    thread.start()
 
         # Disconnected from server
         @On(self.bot, "end")
@@ -76,15 +79,18 @@ class ControlBot:
             self.bot_list.append(created_bot)
 
     # Random action for all bots
-    def random_all(self):
+    def random_all(self, steps):
 
         # Wait for all bots to be ready before executing any actions
         while (self.count_ready() < len(self.bot_list)):
+            # asyncio.sleep(0.01)
             pass
 
-
-        for bot_intance in self.bot_list:
-            bot_intance.random_action()
+        
+        for step in range(steps):
+            for bot_intance in self.bot_list:
+                bot_intance.random_action()
+            self.bot.waitForTicks(1)
 
     def count_ready(self):
         count = 0
